@@ -148,6 +148,7 @@ CHASE_STR = (
     "As The Doctor would say... RUN!")
 
 INSULT_STRINGS = (
+    "Maa chuda bsdk",
     "Owww ... Such a stupid idiot.",
     "Don't drink and type.",
     "I think you should go home or better a mental asylum.",
