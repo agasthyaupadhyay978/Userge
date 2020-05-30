@@ -6,7 +6,6 @@
 #
 # All rights reserved.
 
-
 import os
 from time import time
 from glob import glob
@@ -22,6 +21,8 @@ from tarfile import TarFile, is_tarfile, open as tar_open
 from multiprocessing import Manager
 from typing import Union, List, Tuple, Sequence
 from ctypes import c_bool, c_int, c_wchar_p
+
+from rarfile import RarFile, is_rarfile
 
 from userge import userge, Message, Config, pool
 from userge.utils import humanbytes, time_formatter
@@ -60,8 +61,10 @@ class _BaseLib:
         """Returns progress"""
         percentage = self.percentage
         progress_str = "[{}{}]".format(
-            ''.join(["█" for i in range(floor(percentage / 5))]),
-            ''.join(["░" for i in range(20 - floor(percentage / 5))]))
+            ''.join((Config.FINISHED_PROGRESS_STR
+                     for i in range(floor(percentage / 5)))),
+            ''.join((Config.UNFINISHED_PROGRESS_STR
+                     for i in range(20 - floor(percentage / 5)))))
         return progress_str
 
     @property
@@ -133,6 +136,8 @@ class PackLib(_BaseLib):
                 is_finished) -> None:
         if is_zipfile(file_path):
             u_type = ZipFile
+        elif is_rarfile(file_path):
+            u_type = RarFile
         else:
             u_type = tar_open
         with u_type(file_path, 'r') as p_f:
@@ -157,6 +162,7 @@ class PackLib(_BaseLib):
     def pack_path(self, tar: bool) -> None:
         """PACK file path"""
         file_paths = []
+
         def explorer(path: Path) -> None:
             if path.is_file():
                 self._total += 1
@@ -210,6 +216,9 @@ class PackLib(_BaseLib):
         if is_zipfile(self._file_path):
             with ZipFile(self._file_path, 'r') as z_f:
                 return tuple((z_.filename, z_.file_size) for z_ in z_f.infolist())
+        elif is_rarfile(self._file_path):
+            with RarFile(self._file_path, 'r') as r_f:
+                return tuple((r_.filename, r_.file_size) for r_ in r_f.infolist())
         else:
             with tar_open(self._file_path, 'r') as t_f:
                 return tuple((t_.name, t_.size) for t_ in t_f.getmembers())
@@ -217,7 +226,7 @@ class PackLib(_BaseLib):
     @staticmethod
     def is_supported(file_path: str) -> bool:
         """Returns file is supported or not"""
-        return is_zipfile(file_path) or is_tarfile(file_path)
+        return is_zipfile(file_path) or is_tarfile(file_path) or is_rarfile(file_path)
 
 
 class SCLib(_BaseLib):
@@ -250,8 +259,10 @@ class SCLib(_BaseLib):
         """Returns progress"""
         percentage = self.percentage
         progress_str = "[{}{}]".format(
-            ''.join(["█" for i in range(floor(percentage / 5))]),
-            ''.join(["░" for i in range(20 - floor(percentage / 5))]))
+            ''.join((Config.FINISHED_PROGRESS_STR
+                     for i in range(floor(percentage / 5)))),
+            ''.join((Config.UNFINISHED_PROGRESS_STR
+                     for i in range(20 - floor(percentage / 5)))))
         return progress_str
 
     @property
@@ -335,15 +346,55 @@ class SCLib(_BaseLib):
         self._final_file_path = join(dirname(self._path), file_name)
         file_list = sorted(glob(self._final_file_path + f".{'[0-9]' * len(ext.lstrip('.'))}"))
         self._total = len(file_list)
-        self._file_size = sum([os.stat(f_).st_size for f_ in file_list])
+        self._file_size = sum((os.stat(f_).st_size for f_ in file_list))
         pool.submit_thread(self._combine_worker, file_list)
 
 
-@userge.on_cmd('setdir', about={
+@userge.on_cmd('ls', about={
+    'header': "list directory",
+    'usage': "{tr}ls [path]\n{tr}ls -d : default path"})
+async def ls_dir(message: Message) -> None:
+    """list dir"""
+    if '-d' in message.flags:
+        path = Config.DOWN_PATH
+    else:
+        path = message.input_str or '.'
+    if not exists(path):
+        await message.err("path not exists!")
+        return
+    path_ = Path(path)
+    out = f"<b>PATH</b> : <code>{path}</code>\n\n"
+    if path_.is_dir():
+        folders = ''
+        files = ''
+        for p_s in path_.iterdir():
+            if p_s.is_file():
+                if str(p_s).endswith((".mp3", ".flac", ".wav", ".m4a")):
+                    files += '🎵'
+                elif str(p_s).endswith((".mkv", ".mp4", ".webm", ".avi", ".mov", ".flv")):
+                    files += '📹'
+                elif str(p_s).endswith((".zip", ".tar", ".tar.gz", ".rar")):
+                    files += '🗜'
+                elif str(p_s).endswith((".jpg", ".jpeg", ".png", ".gif", ".bmp", ".ico")):
+                    files += '🖼'
+                else:
+                    files += '📄'
+                size = os.stat(str(p_s)).st_size
+                files += f" <code>{p_s.name}</code> <i>({humanbytes(size)})</i>\n"
+            else:
+                folders += f"📁 <code>{p_s.name}</code>\n"
+        out += (folders + files) or "<code>empty path!</code>"
+    else:
+        size = os.stat(str(path_)).st_size
+        out += f"📄 <code>{path_.name}</code> <i>({humanbytes(size)})</i>\n"
+    await message.edit_or_send_as_file(out, parse_mode='html')
+
+
+@userge.on_cmd('dset', about={
     'header': "set temporary working directory",
-    'usage': ".setdir [path / name]"})
-async def setdir_(message: Message) -> None:
-    """setdir"""
+    'usage': "{tr}dset [path / name]"})
+async def dset_(message: Message) -> None:
+    """dset"""
     path = message.input_str
     if not path:
         await message.err("missing file path!")
@@ -357,9 +408,19 @@ async def setdir_(message: Message) -> None:
         await message.err(p_e)
 
 
-@userge.on_cmd("cleardir", about={'header': "Clear the current working directory"})
-async def clear_dir_(message: Message):
-    """clear dir"""
+@userge.on_cmd('dreset', about={
+    'header': "reset to default working directory",
+    'usage': "{tr}dreset"})
+async def dreset_(message: Message) -> None:
+    """dreset"""
+    path = os.environ.get("DOWN_PATH", "downloads").rstrip('/') + '/'
+    Config.DOWN_PATH = path
+    await message.edit(f"reset **working directory** to `{path}` successfully!", del_in=5)
+
+
+@userge.on_cmd("dclear", about={'header': "Clear the current working directory"})
+async def dclear_(message: Message):
+    """dclear"""
     if not isdir(Config.DOWN_PATH):
         await message.edit(
             f'path : `{Config.DOWN_PATH}` not found and just created!', del_in=5)
@@ -370,11 +431,11 @@ async def clear_dir_(message: Message):
     os.makedirs(Config.DOWN_PATH)
 
 
-@userge.on_cmd('rmdir', about={
-    'header': "delete a directory or file",
-    'usage': ".rmdir [path / name]"})
-async def rmdir_(message: Message) -> None:
-    """rmdir"""
+@userge.on_cmd('dremove', about={
+    'header': "remove a directory or file",
+    'usage': "{tr}dremove [path / name]"})
+async def dremove_(message: Message) -> None:
+    """dremove"""
     path = message.input_str
     if not path:
         await message.err("missing file path!")
@@ -382,14 +443,32 @@ async def rmdir_(message: Message) -> None:
     if not exists(path):
         await message.err("file path not exists!")
         return
-    rmtree(path)
-    await message.edit(f"path : `{path}` **deleted** successfully!", del_in=5)
+    if isfile(path):
+        os.remove(path)
+    else:
+        rmtree(path)
+    await message.edit(f"path : `{path}` **removed** successfully!", del_in=5)
+
+
+@userge.on_cmd('drename ([^|]+)\|([^|]+)', about={
+    'header': "rename a directory or file",
+    'usage': "{tr}drename [path / name] | [new name]"})
+async def drename_(message: Message) -> None:
+    """drename"""
+    path = str(message.matches[0].group(1)).strip()
+    new_name = str(message.matches[0].group(2)).strip()
+    if not exists(path):
+        await message.err(f"file path : {path} not exists!")
+        return
+    new_path = join(dirname(path), new_name)
+    os.rename(path, new_path)
+    await message.edit(f"path : `{path}` **renamed** to `{new_path}` successfully!", del_in=5)
 
 
 @userge.on_cmd(r'split (\d+) ([\s\S]+)', about={
     'header': "Split files",
-    'usage': ".split [split size (MB)] [file path]",
-    'examples': ".split 5 downloads/test.zip"})
+    'usage': "{tr}split [split size (MB)] [file path]",
+    'examples': "{tr}split 5 downloads/test.zip"})
 async def split_(message: Message) -> None:
     """split"""
     split_size = int(message.matches[0].group(1))
@@ -414,20 +493,24 @@ async def split_(message: Message) -> None:
         "**Speed** : `{}/s`\n" + \
         "**ETA** : `{}`\n" + \
         "**Completed Files** : `{}/{}`"
+    count = 0
     while not s_obj.finished:
         if message.process_is_canceled:
             s_obj.cancel()
-        await message.try_to_edit(tmp.format(s_obj.progress,
-                                             s_obj.percentage,
-                                             file_path,
-                                             s_obj.final_file_path,
-                                             humanbytes(s_obj.completed),
-                                             humanbytes(s_obj.total),
-                                             humanbytes(s_obj.speed),
-                                             s_obj.eta,
-                                             s_obj.completed_files,
-                                             s_obj.total_files))
-        await sleep(3)
+        count += 1
+        if count >= 5:
+            count = 0
+            await message.try_to_edit(tmp.format(s_obj.progress,
+                                                 s_obj.percentage,
+                                                 file_path,
+                                                 s_obj.final_file_path,
+                                                 humanbytes(s_obj.completed),
+                                                 humanbytes(s_obj.total),
+                                                 humanbytes(s_obj.speed),
+                                                 s_obj.eta,
+                                                 s_obj.completed_files,
+                                                 s_obj.total_files))
+        await sleep(1)
     if s_obj.output:
         await message.err(s_obj.output)
     else:
@@ -440,8 +523,8 @@ async def split_(message: Message) -> None:
 
 @userge.on_cmd('combine', about={
     'header': "Combine split files",
-    'usage': ".combine [file path]",
-    'examples': ".combine downloads/test.tar.00000"})
+    'usage': "{tr}combine [file path]",
+    'examples': "{tr}combine downloads/test.tar.00000"})
 async def combine_(message: Message) -> None:
     """combine"""
     file_path = message.input_str
@@ -469,20 +552,24 @@ async def combine_(message: Message) -> None:
         "**Speed** : `{}/s`\n" + \
         "**ETA** : `{}`\n" + \
         "**Completed Files** : `{}/{}`"
+    count = 0
     while not c_obj.finished:
         if message.process_is_canceled:
             c_obj.cancel()
-        await message.try_to_edit(tmp.format(c_obj.progress,
-                                             c_obj.percentage,
-                                             file_path,
-                                             c_obj.final_file_path,
-                                             humanbytes(c_obj.completed),
-                                             humanbytes(c_obj.total),
-                                             humanbytes(c_obj.speed),
-                                             c_obj.eta,
-                                             c_obj.completed_files,
-                                             c_obj.total_files))
-        await sleep(3)
+        count += 1
+        if count >= 5:
+            count = 0
+            await message.try_to_edit(tmp.format(c_obj.progress,
+                                                 c_obj.percentage,
+                                                 file_path,
+                                                 c_obj.final_file_path,
+                                                 humanbytes(c_obj.completed),
+                                                 humanbytes(c_obj.total),
+                                                 humanbytes(c_obj.speed),
+                                                 c_obj.eta,
+                                                 c_obj.completed_files,
+                                                 c_obj.total_files))
+        await sleep(1)
     if c_obj.output:
         await message.err(c_obj.output)
     else:
@@ -495,7 +582,7 @@ async def combine_(message: Message) -> None:
 
 @userge.on_cmd('zip', about={
     'header': "Zip file / folder",
-    'usage': ".zip [file path | folder path]"})
+    'usage': "{tr}zip [file path | folder path]"})
 async def zip_(message: Message) -> None:
     """zip"""
     await _pack_helper(message)
@@ -503,7 +590,7 @@ async def zip_(message: Message) -> None:
 
 @userge.on_cmd('tar', about={
     'header': "Tar file / folder",
-    'usage': ".tar [file path | folder path]"})
+    'usage': "{tr}tar [file path | folder path]"})
 async def tar_(message: Message) -> None:
     """tar"""
     await _pack_helper(message, True)
@@ -527,16 +614,20 @@ async def _pack_helper(message: Message, tar: bool = False) -> None:
         "**File Path** : `{}`\n" + \
         "**Dest** : `{}`\n" + \
         "**Completed** : `{}/{}`"
+    count = 0
     while not p_obj.finished:
         if message.process_is_canceled:
             p_obj.cancel()
-        await message.try_to_edit(tmp.format(p_obj.progress,
-                                             p_obj.percentage,
-                                             file_path,
-                                             p_obj.final_file_path,
-                                             p_obj.completed_files,
-                                             p_obj.total_files))
-        await sleep(3)
+        count += 1
+        if count >= 5:
+            count = 0
+            await message.try_to_edit(tmp.format(p_obj.progress,
+                                                 p_obj.percentage,
+                                                 file_path,
+                                                 p_obj.final_file_path,
+                                                 p_obj.completed_files,
+                                                 p_obj.total_files))
+        await sleep(1)
     if p_obj.output:
         await message.err(p_obj.output)
     else:
@@ -549,7 +640,8 @@ async def _pack_helper(message: Message, tar: bool = False) -> None:
 
 @userge.on_cmd('unpack', about={
     'header': "unpack packed file",
-    'usage': ".unpack [zip file path | tar file path]"})
+    'usage': "{tr}unpack [file path]",
+    'types': ['zip', 'tar', 'rar']})
 async def unpack_(message: Message) -> None:
     """unpack"""
     file_path = message.input_str
@@ -572,16 +664,20 @@ async def unpack_(message: Message) -> None:
         "**File Path** : `{}`\n" + \
         "**Dest** : `{}`\n" + \
         "**Completed** : `{}/{}`"
+    count = 0
     while not p_obj.finished:
         if message.process_is_canceled:
             p_obj.cancel()
-        await message.try_to_edit(tmp.format(p_obj.progress,
-                                             p_obj.percentage,
-                                             file_path,
-                                             p_obj.final_file_path,
-                                             p_obj.completed_files,
-                                             p_obj.total_files))
-        await sleep(3)
+        count += 1
+        if count >= 5:
+            count = 0
+            await message.try_to_edit(tmp.format(p_obj.progress,
+                                                 p_obj.percentage,
+                                                 file_path,
+                                                 p_obj.final_file_path,
+                                                 p_obj.completed_files,
+                                                 p_obj.total_files))
+        await sleep(1)
     if p_obj.output:
         await message.err(p_obj.output)
     else:
@@ -594,7 +690,8 @@ async def unpack_(message: Message) -> None:
 
 @userge.on_cmd('packinfo', about={
     'header': "File content of the pack",
-    'usage': ".packinfo [zip file path | tar file path]"})
+    'usage': "{tr}packinfo [file path]",
+    'types': ['zip', 'tar', 'rar']})
 async def packinfo_(message: Message) -> None:
     """packinfo"""
     file_path = message.input_str

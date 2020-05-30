@@ -6,7 +6,6 @@
 #
 # All rights reserved.
 
-
 import os
 import shlex
 import asyncio
@@ -14,7 +13,7 @@ from glob import glob
 from os.path import isfile, relpath
 from typing import Tuple, Dict, List, Union, Optional
 
-from userge import logging
+from userge import logging, Config
 
 _LOG = logging.getLogger(__name__)
 
@@ -57,13 +56,13 @@ async def runcmd(cmd: str) -> Tuple[str, str, int, int]:
             process.pid)
 
 
-async def take_screen_shot(video_file: str, duration: int) -> Optional[str]:
+async def take_screen_shot(video_file: str, duration: int, path: str = '') -> Optional[str]:
     """take a screenshot"""
     _LOG.info('[[[Extracting a frame from %s ||| Video duration => %s]]]', video_file, duration)
     ttl = duration // 2
-    thumb_image_path = f"{video_file}.jpg"
+    thumb_image_path = path or os.path.join(Config.DOWN_PATH, f"{video_file}.jpg")
     command = f"ffmpeg -ss {ttl} -i '{video_file}' -vframes 1 '{thumb_image_path}'"
-    _, err, _, _ = await runcmd(command)
+    err = (await runcmd(command))[1]
     if err:
         _LOG.error(err)
     return thumb_image_path if os.path.exists(thumb_image_path) else None
@@ -80,11 +79,10 @@ def get_import_path(root: str, path: str) -> Union[str, List[str]]:
     seperator = '\\' if '\\' in root else '/'
     if isfile(path):
         return '.'.join(relpath(path, root).split(seperator))[:-3]
-    else:
-        all_paths = glob(root + path.rstrip(seperator) + f"{seperator}*.py", recursive=True)
-        return sorted(
-            [
-                '.'.join(relpath(f, root).split(seperator))[:-3] for f in all_paths
-                if not f.endswith("__init__.py")
-            ]
-        )
+    all_paths = glob(root + path.rstrip(seperator) + f"{seperator}*.py", recursive=True)
+    return sorted(
+        [
+            '.'.join(relpath(f, root).split(seperator))[:-3] for f in all_paths
+            if not f.endswith("__init__.py")
+        ]
+    )

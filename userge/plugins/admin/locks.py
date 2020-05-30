@@ -6,7 +6,6 @@
 #
 # All rights reserved.
 
-
 import os
 from pyrogram import ChatPermissions
 from userge import userge, Message
@@ -21,7 +20,7 @@ CHANNEL = userge.getCLogger(__name__)
     'types': [
         'all', 'msg', 'media', 'polls', 'invite', 'pin', 'info',
         'webprev', 'inlinebots', 'animations', 'games', 'stickers'],
-    'examples': ".lock [all | type]"})
+    'examples': "{tr}lock [all | type]"})
 async def lock_perm(message: Message):
     """
     this function can lock chat permissions from tg group
@@ -160,7 +159,7 @@ async def lock_perm(message: Message):
     'types': [
         'all', 'msg', 'media', 'polls', 'invite', 'pin', 'info',
         'webprev', 'inlinebots', 'animations', 'games', 'stickers'],
-    'examples': ".unlock [all | type]"})
+    'examples': "{tr}unlock [all | type]"})
 async def unlock_perm(message: Message):
     """
     this function can unlock chat permissions from tg group
@@ -330,8 +329,7 @@ async def view_perm(message: Message):
     def convert_to_emoji(val: bool):
         if val is True:
             return "✅"
-        else:
-            return "❌"
+        return "❌"
 
     vmsg = convert_to_emoji(v_perm.permissions.can_send_messages)
     vmedia = convert_to_emoji(v_perm.permissions.can_send_media_messages)
@@ -349,7 +347,7 @@ async def view_perm(message: Message):
         try:
             permission_view_str = ""
 
-            permission_view_str += f"<b>CHAT PERMISSION INFO:</b>\n\n"
+            permission_view_str += "<b>CHAT PERMISSION INFO:</b>\n\n"
             permission_view_str += f"<b>📩 Send Messages:</b> {vmsg}\n"
             permission_view_str += f"<b>🎭 Send Media:</b> {vmedia}\n"
             permission_view_str += f"<b>🎴 Send Stickers:</b> {vstickers}\n"

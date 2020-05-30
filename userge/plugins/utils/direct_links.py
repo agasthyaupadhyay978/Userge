@@ -6,7 +6,6 @@
 #
 # All rights reserved.
 
-
 import re
 import json
 import urllib.parse
@@ -25,7 +24,7 @@ from userge.utils import humanbytes
     'supported links': [
         'Google Drive', 'MEGA.nz', 'Cloud Mail', 'Yandex.Disk', 'AFH',
         'ZippyShare', 'MediaFire', 'SourceForge', 'OSDN', 'GitHub'],
-    'usage': ".direct [link]",
+    'usage': "{tr}direct [link]",
     'others': "MEGA.nz and ZippyShare **DISABLED**"})
 async def direct_(message: Message):
     """direct links generator"""
@@ -50,8 +49,8 @@ async def direct_(message: Message):
         # elif 'zippyshare.com' in link:
             # reply += f" 👉 {zippy_share(link)}\n"
 
-        # elif 'mega.' in link:
-            # reply += f" 👉 {mega_dl(link)}\n"
+        elif 'mega.' in link:
+            reply += f" 👉 {mega_dl(link)}\n"
 
         elif 'yadi.sk' in link:
             reply += f" 👉 {yandex_disk(link)}\n"
@@ -348,7 +347,7 @@ def github(url: str) -> str:
         dl_url = download.headers["location"]
     except KeyError:
         reply += "`Error: Can't extract the link`\n"
- 
+
     name = link.split('/')[-1]
     reply += f'[{name}]({dl_url}) '
 

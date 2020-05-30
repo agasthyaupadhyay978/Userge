@@ -6,7 +6,6 @@
 #
 # All rights reserved.
 
-
 import os
 import math
 import random
@@ -15,15 +14,16 @@ import urllib.request
 from PIL import Image
 from pyrogram.api.functions.messages import GetStickerSet
 from pyrogram.api.types import InputStickerSetShortName
+from pyrogram.errors.exceptions.bad_request_400 import YouBlockedUser
 
 from userge import userge, Message, Config, pool
 
 
 @userge.on_cmd("kang", about={
     'header': "kangs stickers or creates new ones",
-    'usage': "Reply .kang [emoji('s)] [pack number] to a sticker or "
+    'usage': "Reply {tr}kang [emoji('s)] [pack number] to a sticker or "
              "an image to kang it to your userbot pack.",
-    'examples': [".kang", ".kang 🤔", ".kang 2", ".kang 🤔 2"]})
+    'examples': ["{tr}kang", "{tr}kang 🤔", "{tr}kang 2", "{tr}kang 🤔 2"]})
 async def kang_(message: Message):
     """kang"""
     user = message.from_user
@@ -76,6 +76,7 @@ async def kang_(message: Message):
             packname += "_anim"
             packnick += " (Animated)"
             cmd = '/newanimated'
+
         @pool.run_in_thread
         def get_response():
             response = urllib.request.urlopen(
@@ -83,9 +84,13 @@ async def kang_(message: Message):
             return response.read().decode("utf8").split('\n')
         htmlstr = await get_response()
         if ("  A <strong>Telegram</strong> user has created "
-            "the <strong>Sticker&nbsp;Set</strong>.") not in htmlstr:
+                "the <strong>Sticker&nbsp;Set</strong>.") not in htmlstr:
             async with userge.conversation('Stickers') as conv:
-                await conv.send_message('/addsticker')
+                try:
+                    await conv.send_message('/addsticker')
+                except YouBlockedUser:
+                    await message.edit('first **unblock** @Stickers')
+                    return
                 await conv.get_response(mark_read=True)
                 await conv.send_message(packname)
                 msg = await conv.get_response(mark_read=True)
@@ -134,7 +139,11 @@ async def kang_(message: Message):
         else:
             await message.edit("`Brewing a new Pack...`")
             async with userge.conversation('Stickers') as conv:
-                await conv.send_message(cmd)
+                try:
+                    await conv.send_message(cmd)
+                except YouBlockedUser:
+                    await message.edit('first **unblock** @Stickers')
+                    return
                 await conv.get_response(mark_read=True)
                 await conv.send_message(packnick)
                 await conv.get_response(mark_read=True)
@@ -162,7 +171,7 @@ async def kang_(message: Message):
 
 @userge.on_cmd("stkrinfo", about={
     'header': "get sticker pack info",
-    'usage': "reply .stkrinfo to any sticker"})
+    'usage': "reply {tr}stkrinfo to any sticker"})
 async def sticker_pack_info_(message: Message):
     """get sticker pack info"""
     replied = message.reply_to_message
