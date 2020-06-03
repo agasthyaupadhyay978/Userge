@@ -231,6 +231,7 @@ def resize_photo(photo: str) -> str:
 
 
 KANGING_STR = (
+    "i was having my eyes on that uwu...",
     "Using Witchery to kang this sticker...",
     "Plagiarising hehe...",
     "Inviting this sticker over to my pack...",
